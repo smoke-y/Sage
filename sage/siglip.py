@@ -39,20 +39,22 @@ class SiglipAttention(nn.Module):
     def __init__(self, config: SiglipConfig) -> None:
         super().__init__()
         assert config.hidden_size % config.num_attention_head == 0
-        #q,k,v weights
-        self.c_attn = nn.Linear(config.hidden_size, 3*config.hidden_size)
-        self.c_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.q_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size)
         self.nheads = config.num_attention_head
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B,T,C = x.size()           #[batch, numPatch, embDim]
-        qkv = self.c_attn(x)
-        q,k,v = qkv.split(C, dim=2)
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
         q = q.view(B, T, self.nheads, C // self.nheads).transpose(1,2)
         k = k.view(B, T, self.nheads, C // self.nheads).transpose(1,2)
         v = v.view(B, T, self.nheads, C // self.nheads).transpose(1,2)
         y = torch.nn.functional.scaled_dot_product_attention(q,k,v,is_causal=False)
         y = y.transpose(1,2).contiguous().view(B, T, C)
-        return self.c_proj(y)
+        return self.out_proj(y)
 class SiglipMLP(nn.Module):
     def __init__(self, config: SiglipConfig) -> None:
         super().__init__()
