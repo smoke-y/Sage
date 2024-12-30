@@ -5,28 +5,28 @@ from dataclasses import dataclass
 
 @dataclass
 class GemmaConfig:
-    vocab_size: int
-    max_position_embeddings: int = 8192
-    hidden_size: int
-    intermediate_size: int
-    num_hidden_layers: int
-    num_attention_heads: int
+    vocab_size: int = 257216
+    hidden_size: int = 2048
+    intermediate_size: int = 16384
+    num_hidden_layers: int = 18
+    num_attention_heads: int = 8
+    num_key_value_head: int = 1
     head_dim: int = 256
-    num_key_value_head: int
+    max_position_embeddings: int = 8192
     rms_norm_eps: float = 1e-6
     rope_theta: float = 10000.0
     attention_bias: bool = False
     attention_dropout: float = 0.0
-    pad_token_id: bool = False
+    pad_token_id: int = 0
 
 @dataclass
 class PaliGemmaConfig:
-    projection_dim: int = 2048
-    hidden_size: int = 2048
-    image_token_index: int
-    pad_token_id: int
     vision_config: SiglipConfig
     text_config: GemmaConfig
+    image_token_index: int = 257152
+    pad_token_id: int = 0
+    projection_dim: int = 2048
+    hidden_size: int = 2048
 
 def rotate_half(x):
     # Build the [-x2, x1, -x4, x3, ...] tensor for the sin part of the positional encoding.
