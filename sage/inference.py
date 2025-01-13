@@ -1,53 +1,21 @@
-from model import *
-from PIL import Image
-import numpy as np
 import torch
+from model import *
+from sys import argv
+from tqdm import tqdm
 
-img = Image.open("kanye.jpg").convert('RGB')
-img_array = np.array(img)
-# Rearranging dimensions from (H, W, C) to (C, H, W)
-img_tensor = torch.tensor(img_array).permute(2, 0, 1)
-img_tensor = (img_tensor.float() / 255.0).unsqueeze(0)
+assert len(argv) >= 3, "prompt and image path required"
 
-tokenizer, model = Sage.from_pretrained()
-model.eval()  # Set model to evaluation mode
+pipe = Pipeline("cuda" if torch.cuda.is_available() else "cpu")
+stop_token = pipe.model.config.text_config.eos_token_id
+input_emb = pipe.first_emb(argv[1], argv[2])
 
-# Initial input
-input_text = "<|im_start|>user\n<image> What is he wearing and what color is it?<|im_end|>\n<|im_start|>assistant\n"
-max_length = 20  # Maximum number of tokens to generate
-stop_token = tokenizer.eos_token_id  # End-of-sequence token (if applicable)
-
-# Tokenize initial input
-input_ids = torch.tensor(tokenizer.encode(input_text)).unsqueeze(0)
-generated_text = input_text
-
-# Generate tokens iteratively
-for _ in range(max_length):
-    # Forward pass
-    with torch.no_grad():
-        output = model.forward(input_ids, img_tensor)
-        last_token_logits = output[:, -1, :]  # Get logits for the last token
-
-    # Apply softmax to get probabilities
-    probs = torch.softmax(last_token_logits, dim=-1)
-
-    # Sample the next token (optional: use temperature for diversity)
-    temperature = 0.7
-    probs = torch.softmax(last_token_logits / temperature, dim=-1)
-    predicted_token_index = torch.multinomial(probs, num_samples=1).item()
-
-    if predicted_token_index == stop_token: break
-
-    # Append the predicted token to the input IDs
-    input_ids = torch.cat([input_ids, torch.tensor([[predicted_token_index]])], dim=-1)
-
-    # Decode the new token and add it to the generated text
-    new_token = tokenizer.decode([predicted_token_index])
-    generated_text += new_token
-
-    # Print intermediate results (optional)
-    print(f"Generated so far: {generated_text}")
-
-# Final generated text
-print("\nFinal generated text:")
+generated_text = ""
+with torch.inference_mode():
+    for _ in tqdm(range(100)):
+        predicted_token_index = pipe.generate(input_emb)
+        predicted_token_index_val = predicted_token_index.item()
+        if predicted_token_index_val == stop_token: break
+        input_emb = torch.cat([input_emb, pipe.get_emb(predicted_token_index)], dim=1)
+        new_token = pipe.tokenizer.decode(predicted_token_index_val)
+        generated_text += new_token
 print(generated_text)
