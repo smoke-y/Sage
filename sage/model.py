@@ -81,13 +81,18 @@ class Pipeline:
         image_emb = self.model.multi_modal_projector(image)
         index_to_replace = (input_ids == self.model.config.image_token_index).nonzero(as_tuple=True)[0].item()
         return torch.cat([input_emb[:, :index_to_replace, :], image_emb, input_emb[:, index_to_replace+1: , :]], dim=1).to(self.device)
-    def generate(self, input_emb: torch.Tensor, temp: float = 0.7, top_k: float = 50) -> torch.Tensor:
-        with torch.autocast(device_type=self.device, dtype=torch.bfloat16):
-            logits = self.model.forward(input_emb)
+    def get_logits(self, input_emb: torch.Tensor) -> torch.Tensor:
+        with torch.autocast(device_type=self.device, dtype=torch.bfloat16): return self.model.forward(input_emb)
+    def generate(self, input_emb: torch.Tensor, labels: torch.Tensor = None, temp: float = 0.7, top_k: float = 50) -> torch.Tensor:
+        logits = self.get_logits(input_emb)
         top_k_logits, top_k_indices = torch.topk(logits[:, -1, :], top_k)
         probs = torch.softmax(top_k_logits / temp, dim=-1)
         pred = torch.multinomial(probs, num_samples=1)
-        return top_k_indices.gather(-1, pred)
+        loss = None
+        if labels is not None:
+            logits = logits[:, -1, :]
+            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
+        return top_k_indices.gather(-1, pred), loss
     def get_emb(self, index: torch.Tensor) -> torch.Tensor: return self.model.language_model.get_input_embeddings()(index)
     def save_lora(self, path: str) -> None: torch.save(lora.lora_state_dict(self.model), path)
     def load_lora(self, path: str) -> None: self.model.load_state_dict(torch.load(path), strict=False)
