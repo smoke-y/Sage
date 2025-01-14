@@ -7,7 +7,7 @@ assert len(argv) >= 3, "prompt and image path required"
 
 pipe = Pipeline("cuda" if torch.cuda.is_available() else "cpu")
 stop_token = pipe.model.config.text_config.eos_token_id
-input_emb = pipe.first_emb(argv[1], argv[2])
+input_emb = pipe.first_emb(argv[1], Image.open(argv[2]))
 
 generated_text = ""
 with torch.inference_mode():

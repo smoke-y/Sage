@@ -1,5 +1,7 @@
+import copy
 import torch
 import torch.nn as nn
+import loralib as lora
 from language_model.qwen import *
 from vision_model.siglip import *
 from transformers.utils import logging
@@ -38,12 +40,12 @@ class Sage(nn.Module):
     @staticmethod
     def from_pretrained(device: torch.device):
         from transformers import LlavaForConditionalGeneration
-
         pre_model = LlavaForConditionalGeneration.from_pretrained("llava-hf/llava-interleave-qwen-0.5b-hf")
-        config = SageConfig(pre_model.config.vision_config, pre_model.config.text_config)
+        config = SageConfig(copy.deepcopy(pre_model.config.vision_config), copy.deepcopy(pre_model.config.text_config))
         model = Sage(config).to(device)
         for name, param in pre_model.named_parameters():
             if name in model.state_dict(): model.state_dict()[name].copy_(param)
+        del pre_model
         return torch.compile(model)
     def forward(self, input_emb: torch.Tensor) -> torch.Tensor:
         attention_mask = torch.ones(input_emb.shape[:2], dtype=torch.int, device=input_emb.device)
@@ -57,16 +59,17 @@ import numpy as np
 from PIL import Image
 
 class Pipeline:
-    def __init__(self, device: torch.device) -> None:
+    def __init__(self, device: torch.device, train: bool = False) -> None:
         print("Using", device)
         torch.set_float32_matmul_precision("high")
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-interleave-qwen-0.5b-hf")
         self.model = Sage.from_pretrained(device)
         self.device = device
-    def first_emb(self, text: str, img_path: str) -> torch.Tensor:
+        if train: lora.mark_only_lora_as_trainable(self.model)
+    def first_emb(self, text: str, img: Image) -> torch.Tensor:
         size = self.model.config.vision_config.image_size
-        img = Image.open(img_path).convert("RGB").resize((size, size))
+        img = img.resize((size, size))
         img_array = np.array(img)
         img_tensor = torch.tensor(img_array).permute(2, 0, 1)  #[H, W, C] -> [C, H, W]
         img_tensor = (img_tensor.float() / 255.0).unsqueeze(0).to(self.device)
@@ -86,3 +89,5 @@ class Pipeline:
         pred = torch.multinomial(probs, num_samples=1)
         return top_k_indices.gather(-1, pred)
     def get_emb(self, index: torch.Tensor) -> torch.Tensor: return self.model.language_model.get_input_embeddings()(index)
+    def save_lora(self, path: str) -> None: torch.save(lora.lora_state_dict(self.model), path)
+    def load_lora(self, path: str) -> None: self.model.load_state_dict(torch.load(path), strict=False)
