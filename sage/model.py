@@ -79,8 +79,9 @@ class Sage(nn.Module):
                 loraParam = layer.parametrizations["weight"][0]
                 LoRaParam += loraParam.lora_a.nelement() + loraParam.lora_b.nelement()
         def recurseAndApply(module):
-            for name, child in module.named_children(): recurseAndApply(child)
-            if hasattr(module, "weight") and type(module) in [nn.Linear, nn.Embedding]: applyLoraToLayer(module)
+            for name, child in module.named_children():
+                if type(child) != nn.Conv2d: recurseAndApply(child)
+            if hasattr(module, "weight"): applyLoraToLayer(module)
         with torch.no_grad():
             NonLoRaParam = 0
             LoRaParam = 0
@@ -133,17 +134,11 @@ class Pipeline:
         for name, parameter in self.model.named_parameters():
             if name.endswith("lora_a") or name.endswith("lora_b"): param.append(parameter)
         return torch.optim.Adam([{"params": param}], lr=0.01, fused=True)
-    def get_logits(self, input_emb: torch.Tensor) -> torch.Tensor:
-        with torch.autocast(device_type=self.device, dtype=torch.bfloat16): return self.model.forward(input_emb)
-    def generate(self, input_emb: torch.Tensor, labels: torch.Tensor = None, temp: float = 0.7, top_k: float = 50):
+    def get_logits(self, input_emb: torch.Tensor) -> torch.Tensor: return self.model.forward(input_emb)
+    def generate(self, input_emb: torch.Tensor, temp: float = 0.7, top_k: float = 50) -> torch.Tensor:
         logits = self.get_logits(input_emb)
         top_k_logits, top_k_indices = torch.topk(logits[:, -1, :], top_k)
         probs = torch.softmax(top_k_logits / temp, dim=-1)
         pred = torch.multinomial(probs, num_samples=1)
-        loss = None
-        if labels is not None:
-            logits = logits[:, -1, :]
-            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
-        b = top_k_indices.gather(-1, pred)
-        return b, loss
-    def get_emb(self, index: torch.Tensor) -> torch.Tensor: return self.model.language_model.get_input_embeddings()(index)
+        return top_k_indices.gather(-1, pred)
+    def get_emb(self) -> torch.Tensor: return self.model.language_model.get_input_embeddings()

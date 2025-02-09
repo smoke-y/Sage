@@ -15,13 +15,12 @@ for epoch in range(10):
         optim.zero_grad()
         input_emb = pipe.first_emb(i["question"], i["image"])
         lenQues = input_emb.shape[1]
-        ans_id = torch.tensor(pipe.tokenizer.encode(i["answer"]) + [stop_token]).unsqueeze(0).to(device)
-        for j in range(ans_id.shape[1]):
-            predicted_token_index, loss = pipe.generate(input_emb, ans_id[:, j])
-            input_emb = torch.cat([input_emb, pipe.get_emb(ans_id[:, j]).unsqueeze(0)], dim=1)
-            log.write(f"{loss.detach().cpu().numpy()}\n")
-            loss.backward()
-            optim.step()
+        labels = ans_id = torch.tensor(pipe.tokenizer.encode(i["answer"]) + [stop_token]).unsqueeze(0).to(device)
+        input_emb = torch.cat([input_emb, pipe.get_emb()(labels)], dim=1)
+        logits = pipe.get_logits(input_emb)[:, lenQues: ,:]
+        loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
+        loss.backward()
+        optim.step()
         if x == 7:
             x = 0
             pipe.model.saveLoRaWeights("lora.pth")
