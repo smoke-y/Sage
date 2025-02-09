@@ -80,7 +80,7 @@ class Sage(nn.Module):
                 LoRaParam += loraParam.lora_a.nelement() + loraParam.lora_b.nelement()
         def recurseAndApply(module):
             for name, child in module.named_children():
-                if type(child) != nn.Conv2d: recurseAndApply(child)
+                if type(child) != nn.Conv2d and "vision" not in name: recurseAndApply(child)
             if hasattr(module, "weight"): applyLoraToLayer(module)
         with torch.no_grad():
             NonLoRaParam = 0
@@ -110,7 +110,7 @@ from PIL import Image
 class Pipeline:
     def __init__(self, device: torch.device, lora:bool=False) -> None:
         print("Using", device)
-        torch.set_float32_matmul_precision("high")
+        torch.set_float32_matmul_precision("medium")
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained("llava-hf/llava-interleave-qwen-0.5b-hf")
         self.model = Sage.from_pretrained(device, lora)
